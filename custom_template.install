@@ -1,0 +1,31 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the custom_template module.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function custom_template_schema() {
+  $schema['custom_template'] = array(
+    'description' => 'Stores custom template option for a node (if applicable)',
+    'fields' => array(
+      'nid' => array(
+        'description' => 'The node to apply the template.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'template' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+      ),
+    ), 
+    
+  );
+  
+  return $schema;   
+}

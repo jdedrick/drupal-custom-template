@@ -1,0 +1,6 @@
+name = Custom Template
+description = This module allows admins to choose page templates on a node by node basis.
+package = Custom
+
+core = 7.x
+php = 5.x

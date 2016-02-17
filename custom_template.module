@@ -1,0 +1,185 @@
+<?php
+
+/**
+ * Implements hook_menu().
+   // add an admin page for choosing the default location where the custom themes folder lives
+   // be sure that the server has the access permissions!
+ */
+function custom_template_menu() {
+
+  $items = array();
+
+  $items['admin/config/content/custom-template'] = array(
+    'title' => 'Custom node template settings',
+    'description' => 'Admin setting for choosing a folder to point to for the custom theme templates',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('custom_template_admin'),
+    'access arguments' => array('administer custom theme settings'),
+    'type' => MENU_NORMAL_ITEM,
+   );
+
+  return $items;
+}
+
+/**
+ *
+   // the callback function to create the form required to choose the theme directory
+ */
+function custom_template_admin() {
+  $form = array();
+
+  $form['custom_themes_directory'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Custom themes directory'),
+    '#default_value' => variable_get('custom_themes_directory', null),
+    '#size' => 20,
+    //'#maxlength' => ,
+    '#description' => t("working directory where the custom themes folder lives. Be sure it exists and is accessible by the server."),
+    '#required' => TRUE,
+  );
+
+  return system_settings_form($form);
+}
+
+
+/**
+ * Implements hook_form_BASE_FORM_ID_alter().
+  // alter the addtional setting menu for the node to add the option for templating
+  // add dynamic template list to node form for choosing page template
+ */
+function custom_template_form_node_form_alter(&$form, $form_state) {
+
+  $templates = custom_template_get_custom_template_files();
+  $template_names;
+
+  $disabled = true;
+  if(!empty($templates)) {
+    foreach ($templates as $template) {
+      $template_names[$template->filename] = $template->filename;
+    }
+    $disabled = false;
+  }
+
+  $node = $form['#node'];
+  $template = (isset($node->nid)) ? (custom_template_check_template($node) && !empty($template_names)): false;
+  $template_enabled = ($template != false) ? true : false;
+
+  $form['template_settings'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Template settings'),
+    '#description' => ($disabled ? t('No templates are available.') : t('Choose a custom template.')),
+    '#default_value' => 'I am a setting with a summary',
+    '#group' => 'additional_settings',
+    '#weight' => 30,
+  );
+
+  $form['template_settings']['template_enabled'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Use a custom template'),
+    '#default_value' => $template_enabled,
+    '#disabled' => $disabled
+  );
+
+  $form['template_settings']['template'] = array(
+    '#type' => 'select',
+    '#title' => t('Templates'),
+    '#default_value' => $template,
+    '#options' => $template_names,
+    '#disabled' => $disabled
+  );
+
+}
+
+/**
+  // get a list of all the template files in the provided directory
+ */
+function custom_template_get_custom_template_files() {
+  $dir = variable_get('custom_themes_directory', null);
+  $files = file_scan_directory($dir, '/^.*\.tpl.php$/');
+  return $files;
+}
+
+/**
+  // implements hook_node_insert
+  // insert a record for the node template
+ */
+function custom_template_node_insert($node) {
+  // save setting for node page template if box is checked
+  if (isset($node->template_enabled) && $node->template_enabled > 0) {
+    db_insert('custom_template')
+    ->fields(array(
+      'nid' => $node->nid,
+      'template' => $node->template,
+    ))
+    ->execute();
+  }
+}
+
+/**
+  implements hook_node_update
+ */
+function custom_template_node_update($node) {
+  // save setting for node page template if box is checked
+  if (isset($node->template_enabled) && $node->template_enabled > 0) {
+    $template = custom_template_check_template($node);
+    if ($template) {
+      db_update('custom_template')
+      ->fields(array(
+        'template' => $node->template,
+      ))
+      ->condition('nid', $node->nid, '=')
+      ->execute();
+    } else {
+      db_insert('custom_template')
+      ->fields(array(
+        'nid' => $node->nid,
+        'template' => $node->template,
+      ))
+      ->execute();
+    }
+  } else {
+    // delete from database if checkbox is unchecked
+    db_delete('custom_template')
+      -> condition('nid', $node->nid)
+      -> execute();
+  }
+}
+
+// delete from the database where the current node is present
+function custom_template_node_delete($node) {
+  db_delete('custom_template')
+  -> condition('nid', $node->nid)
+  -> execute();
+}
+
+// check for a current template existing for the node.  return false if not.
+function custom_template_check_template($node) {
+
+  $query = db_select('custom_template', 'ct');
+  $query->condition('ct.nid', $node->nid, '=')
+      ->fields('ct', array('nid', 'template'));
+  $result = $query->execute()->fetchAssoc();
+
+  if (!empty($result)) {
+    return $result['template'];
+  }
+
+  return false;
+}
+
+
+/**
+  // override the template suggestions to the currently set node page template, if applicable
+ */
+function custom_template_preprocess_page(&$vars) {
+  if (isset($vars['node'])) {
+    $template_name = custom_template_check_template($vars['node']);
+    if ($template_name) {
+      if ($vars['page']['content']['system_main']['#node_edit_form'] != 1) {
+        $template_suggestion = strtr($template_name, '-', '_');
+        $template_suggestion = str_replace('.tpl.php', '', $template_suggestion);
+        $vars['theme_hook_suggestions'][] = $template_suggestion;
+      }
+    }
+  }
+}
